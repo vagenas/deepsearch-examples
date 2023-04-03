@@ -1,0 +1,6 @@
+- path: "./sample_input/example_1.ipynb"
+  ds_config: "../ds-auth.ext-v2.json"
+- path: "./sample_input/example_2.ipynb"
+  ds_config: "../ds-auth.ext-v2.json"
+- path: "./sample_input/example_1.ipynb"
+  ds_config: "../ds-auth.foc.json"
