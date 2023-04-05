@@ -1,19 +1,17 @@
-import nbformat
-from nbconvert.preprocessors import ExecutePreprocessor, CellExecutionError
-
-import yaml
+import os
+import uuid
 from pathlib import Path
 
-import os
-
-import uuid
+import nbformat
+import yaml
+from deepsearch.core.util.config_paths import ENV_VAR_NAME as DS_CFG_ENV_KEY
+from nbconvert.preprocessors import CellExecutionError, ExecutePreprocessor
 
 # constants
 RUNNER_CONFIG = Path(__file__).parent / "config.yaml"
 OUTPUT_DIR = Path(__file__).parent / "out"
 PATH_YAML_KEY = "path"
 DS_CFG_YAML_KEY = "ds_config"
-DS_CFG_ENV_KEY = "DS_CONFIG_FILE"  # the one used in the notebooks
 
 
 def execute_notebook(run_id, notebook_path, ds_auth_path, output_dir_path):
