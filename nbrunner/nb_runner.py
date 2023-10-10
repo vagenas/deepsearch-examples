@@ -1,65 +1,124 @@
 import os
+from typing import Optional, Set
 import uuid
 from pathlib import Path
 
 import nbformat
-import yaml
-from deepsearch.core.util.config_paths import ENV_VAR_NAME as DS_CFG_ENV_KEY
 from nbconvert.preprocessors import CellExecutionError, ExecutePreprocessor
+import glob
+from dsnotebooks.settings import ProjectNotebookSettings
+from nbrunner.settings import NotebookRunnerSettings
+from deepsearch.cps.client.components.elastic import ElasticProjectDataCollectionSource
 
-# constants
-RUNNER_CONFIG = Path(__file__).parent / "config.yaml"
-OUTPUT_DIR = Path(__file__).parent / "out"
-PATH_YAML_KEY = "path"
-DS_CFG_YAML_KEY = "ds_config"
+from rich.console import Console
+from rich.style import Style
+from rich.table import Table
+from rich.text import Text
 
-
-def execute_notebook(run_id, notebook_path, ds_auth_path, output_dir_path):
-
-    os.environ[DS_CFG_ENV_KEY] = str(ds_auth_path)
-
-    with open(notebook_path) as f:
-        nb = nbformat.read(f, as_version=4)
-    ep = ExecutePreprocessor(timeout=600, kernel_name="python3")
-
-    output_filename = output_dir_path / f"{Path(notebook_path.name).stem}_{run_id}.ipynb"
-    try:
-        out = ep.preprocess(nb, {'metadata': {'path': notebook_path.parent}})
-    except CellExecutionError:
-        print(f"=> Error during {run_id}; check {output_filename} for traceback")
-        out = None
-    finally:
-        with open(output_filename, mode='w', encoding='utf-8') as f:
-            nbformat.write(nb, f)
-        del os.environ[DS_CFG_ENV_KEY]
-    return out
+import deepsearch as ds
 
 
-def run():
-    with open(RUNNER_CONFIG, "r") as f:
-        configs = yaml.safe_load(f)
 
-    output_dir_path = Path(OUTPUT_DIR)
-    output_dir_path.mkdir(parents=True, exist_ok=True)
-    n_success = 0
-    n_total = len(configs)
+class NotebookRunner:
+    def __init__(self, settings: Optional[NotebookRunnerSettings] = None):
+        _settings = settings or NotebookRunnerSettings()
 
-    for cfg in configs:
-        run_id = uuid.uuid4().hex
-        print(f"{run_id=}, {cfg=}")
-        res = execute_notebook(
-            run_id=run_id,
-            notebook_path=Path(cfg[PATH_YAML_KEY]).resolve(),
-            ds_auth_path=Path(cfg[DS_CFG_YAML_KEY]).resolve(),
-            output_dir_path=output_dir_path,
+        self.run_id = uuid.uuid4().hex
+        print(f"{self.run_id=}, {_settings=}")
+
+        self.output_dir_path = Path(_settings.output_root_dir) / self.run_id
+        self.output_dir_path.mkdir(parents=True, exist_ok=True)
+
+        nb_settings = ProjectNotebookSettings()
+        self.api = ds.CpsApi.from_env(profile_name=nb_settings.profile)
+        self.proj_key = nb_settings.proj_key
+
+        excl_paths = {Path(f).resolve() for f in _settings.excluded}
+        print(f"{excl_paths=}")
+
+        glob_iter = glob.iglob(_settings.input_root_dir + '/**/*.ipynb', recursive=True)
+        self.paths = sorted(
+            [p for f in glob_iter if (p := Path(f)).resolve() not in excl_paths],
+            key=str,
         )
-        if res is not None:
-            n_success += 1
+        print(f"{self.paths=}")
 
-    print(80*"-")
-    print(f"Successful runs: {n_success}/{n_total}")
-    print(80*"-")
+        self.short_id_len = _settings.short_id_len
+
+
+    def execute_notebook(self, run_id, notebook_path):
+
+        with open(notebook_path) as f:
+            nb = nbformat.read(f, as_version=4)
+        ep = ExecutePreprocessor(timeout=600, kernel_name="python3")
+
+        output_filename = self.output_dir_path / f"{Path(notebook_path.name).stem}_{run_id}.ipynb"
+        try:
+            out = ep.preprocess(nb, {'metadata': {'path': notebook_path.parent}})
+        except CellExecutionError as e:
+            print(f"=> Error during {run_id}; check {output_filename} for details")
+            print(e.traceback)
+            out = None
+        finally:
+            with open(output_filename, mode='w', encoding='utf-8') as f:
+                nbformat.write(nb, f)
+        return out
+
+    def print_summary_table(self, err_pos: Set[int]):
+        table = Table(title="Summary", show_lines=True)
+        table.add_column("#")
+        table.add_column("Notebook")
+        table.add_column("Status")
+        ok_txt = Text("OK", style=Style(color="green"))
+        err_txt = Text("ERROR", style=Style(color="red"))
+        for i, notebook_path in enumerate(self.paths):
+            table.add_row(str(i+1), str(notebook_path), ok_txt if i not in err_pos else err_txt)
+
+        console = Console()
+        console.print(table)
+
+    def cleanup_index_by_name(self, proj_key: str, idx_name: str):
+        indices = self.api.data_indices.list(proj_key=proj_key)
+        for idx in indices:
+            if idx.name == idx_name:
+                print(f'Deleting index (name="{idx.name}", key="{idx.source.index_key}"')
+                self.api.data_indices.delete(
+                    coords=ElasticProjectDataCollectionSource(
+                        proj_key=proj_key,
+                        index_key=idx.source.index_key,
+                    ),
+                )
+
+    def run(self):
+
+        err_pos = set()  # positions of errors
+        for i, notebook_path in enumerate(self.paths):
+            run_item_id = uuid.uuid4().hex
+            print(f"[{i+1}/{len(self.paths)}] Running {str(notebook_path)}")
+            new_idx_name = f"{self.run_id[:self.short_id_len]}_{run_item_id[:self.short_id_len]}"
+            os.environ["DS_NB_NEW_IDX_NAME"] = new_idx_name
+            res = self.execute_notebook(
+                run_id=run_item_id,
+                notebook_path=notebook_path,
+            )
+            if res is None:
+                err_pos.add(i)
+
+            self.cleanup_index_by_name(proj_key=self.proj_key, idx_name=new_idx_name)
+
+        print(80*"-")
+        self.print_summary_table(err_pos=err_pos)
+        print(80*"-")
+
+        n_total = len(self.paths)
+        n_err = len(err_pos)
+        n_success = n_total - n_err
+        print(f"Successful runs: {n_success}/{n_total}")
+        print()
+
+        exit(code=0 if n_err == 0 else 1)
 
 
 if __name__ == "__main__":
-    run()
+    runner = NotebookRunner()
+    runner.run()
