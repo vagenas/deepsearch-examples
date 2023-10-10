@@ -1,9 +1,9 @@
 name: "Run notebooks"
 
 on:
-  push:  # TODO switch to schedule & manual
-    branches:
-      - "**"
+  workflow_dispatch:  # no body
+  schedule:
+    - cron: "0 17 * * *"  # UTC-based
 
 jobs:
   run-notebooks:
