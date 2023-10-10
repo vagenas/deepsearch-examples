@@ -30,10 +30,10 @@ jobs:
         shell: bash
       - name: Run notebooks
         env:
-          DEEPSEARCH_HOST: ${{ secrets.DEEPSEARCH_HOST }}
+          DEEPSEARCH_HOST: ${{ vars.DEEPSEARCH_HOST }}
           DEEPSEARCH_USERNAME: ${{ secrets.DEEPSEARCH_USERNAME }}
           DEEPSEARCH_API_KEY: ${{ secrets.DEEPSEARCH_API_KEY }}
-          DEEPSEARCH_VERIFY_SSL: ${{ secrets.DEEPSEARCH_VERIFY_SSL }}
-          DS_NB_PROJ_KEY: ${{ secrets.DS_NB_PROJ_KEY }}
-          DS_NR_EXCLUDED: ${{ secrets.DS_NR_EXCLUDED }}
+          DEEPSEARCH_VERIFY_SSL: ${{ vars.DEEPSEARCH_VERIFY_SSL }}
+          DS_NB_PROJ_KEY: ${{ vars.DS_NB_PROJ_KEY }}
+          DS_NR_EXCLUDED: ${{ vars.DS_NR_EXCLUDED }}
         run: poetry run python -m nbrunner.nb_runner
