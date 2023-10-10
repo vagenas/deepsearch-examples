@@ -18,13 +18,13 @@ from rich.text import Text
 import deepsearch as ds
 
 
-
 class NotebookRunner:
     def __init__(self, settings: Optional[NotebookRunnerSettings] = None):
         _settings = settings or NotebookRunnerSettings()
+        # print(f"{_settings=}")
 
         self.run_id = uuid.uuid4().hex
-        print(f"{self.run_id=}, {_settings=}")
+        print(f"{self.run_id=}")
 
         self.output_dir_path = Path(_settings.output_root_dir) / self.run_id
         self.output_dir_path.mkdir(parents=True, exist_ok=True)
@@ -34,14 +34,14 @@ class NotebookRunner:
         self.proj_key = nb_settings.proj_key
 
         excl_paths = {Path(f).resolve() for f in _settings.excluded}
-        print(f"{excl_paths=}")
+        # print(f"{excl_paths=}")
 
         glob_iter = glob.iglob(_settings.input_root_dir + '/**/*.ipynb', recursive=True)
         self.paths = sorted(
             [p for f in glob_iter if (p := Path(f)).resolve() not in excl_paths],
             key=str,
         )
-        print(f"{self.paths=}")
+        # print(f"{self.paths=}")
 
         self.short_id_len = _settings.short_id_len
 
@@ -67,14 +67,14 @@ class NotebookRunner:
     def print_summary_table(self, err_pos: Set[int]):
         table = Table(title="Summary", show_lines=True)
         table.add_column("#")
-        table.add_column("Notebook")
+        table.add_column("Notebook", overflow="fold")
         table.add_column("Status")
         ok_txt = Text("OK", style=Style(color="green"))
         err_txt = Text("ERROR", style=Style(color="red"))
         for i, notebook_path in enumerate(self.paths):
             table.add_row(str(i+1), str(notebook_path), ok_txt if i not in err_pos else err_txt)
 
-        console = Console()
+        console = Console(force_terminal=True)
         console.print(table)
 
     def cleanup_index_by_name(self, proj_key: str, idx_name: str):
