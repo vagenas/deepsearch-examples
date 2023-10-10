@@ -1,0 +1,27 @@
+name: "Run notebooks"
+
+on:
+  push:
+    branches:
+      - "**"
+      # - "!main"
+      # - "!gh-pages"
+
+env:
+  # disable keyring (https://github.com/actions/runner-images/issues/6185):
+  PYTHON_KEYRING_BACKEND: keyring.backends.null.Keyring
+
+jobs:
+  build-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install poetry
+        run: pipx install poetry==1.6.1
+        shell: bash
+      - uses: actions/setup-python@v4
+      - name: Install dependencies
+        run: poetry install
+        shell: bash
+      - name: Run notebooks
+        run: poetry run python -m nbrunner.nb_runner

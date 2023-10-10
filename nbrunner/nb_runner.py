@@ -40,7 +40,7 @@ class NotebookRunner:
         self.paths = sorted(
             [p for f in glob_iter if (p := Path(f)).resolve() not in excl_paths],
             key=str,
-        )
+        )[-1:]  # FIXME temp simplification
         print(f"{self.paths=}")
 
         self.short_id_len = _settings.short_id_len
